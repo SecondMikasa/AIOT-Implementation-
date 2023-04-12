@@ -1,0 +1,49 @@
+#include "tensorflow/core/public/session.h"
+#include "tensorflow/core/platform/env.h"
+#include "tensorflow/core/framework/tensor.h"
+#include "tensorflow/cc/ops/standard_ops.h"
+
+using namespace tensorflow;
+
+int main() {
+  //set up data collection from IoT devices
+  //store data on local server
+
+  //use collected data to train LSTM model 
+  std::vector<int64_t> shape = {1000, 10, 1};
+  Tensor x_train(DT_FLOAT, TensorShape(shape));
+  auto x_train_mapped = x_train.tensor<float, 3>();
+  for (int i = 0; i < 1000; i++) {
+    for (int j = 0; j < 10; j++) {
+      x_train_mapped(i, j, 0) = rand() / (float)RAND_MAX;
+    }
+  }
+
+  std::vector<int64_t> y_shape = {1000, 1};
+  Tensor y_train(DT_FLOAT, TensorShape(y_shape));
+  auto y_train_mapped = y_train.tensor<float, 2>();
+  for (int i = 0; i < 1000; i++) {
+    y_train_mapped(i, 0) = rand() / (float)RAND_MAX;
+  }
+
+  // build the model
+  Scope root = Scope::NewRootScope();
+  auto x = Placeholder(root, DT_FLOAT, Placeholder::Shape({1000, 10, 1}));
+  auto lstm_cell = BasicLSTMCell(root, 20);
+  auto states = LSTM(x, lstm_cell);
+  auto dense = Dense(states.h, 1, {true, false}, "", 0);
+  auto output = Activation(root, dense, "RELU");
+  auto label = Placeholder(root, DT_FLOAT, Placeholder::Shape({1000, 1}));
+  auto loss = MeanSquaredError(root, output, label);
+  auto train_op = AdamOptimizer(root, 0.01).Minimize(loss);
+
+  // create session and initialize variables
+  tensorflow::SessionOptions options;
+  tensorflow::Session* session = tensorflow::NewSession(options);
+  TF_CHECK_OK(session->Create(root));
+
+  TF_CHECK_OK(session->Run({}, {}, {"init_all_vars_op"}, nullptr));
+
+  // run training loop
+  for (int i = 0; i < 100; i++) {
+    TF_CHECK_OK(session->
